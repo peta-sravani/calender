@@ -1,0 +1,49 @@
+@staff_member_required
+def authorize_access(request):
+    return redirect(get_flow(request).step1_get_authorize_url())
+
+@staff_member_required
+def oauth2_callback(request):
+    credentials = get_flow(request).step2_exchange(request.GET['code'])
+
+    store = get_store()
+    store.put(credentials)
+    credentials.set_store(store)
+
+    return redirect('...')
+
+def get_flow(request):
+    flow = client.flow_from_clientsecrets(os.path.join(CREDENTIAL_DIR, CLIENT_SECRET_FILE),
+                                      SCOPES,
+                                      redirect_uri='%s://%s/google-calendar/oauth2-callback/' % (request.META['wsgi.url_scheme'], request.META['HTTP_HOST'],))
+    flow.params['access_type'] = 'offline'
+    flow.params['approval_prompt'] = 'force'
+
+    return flow
+
+def get_store():
+    return oauth2client.file.Storage(os.path.join(CREDENTIAL_DIR, ACCESS_TOKEN_FILE))
+
+def has_valid_api_credentials():
+    credentials = get_store().get()
+    return credentials is not None
+
+def build_service():
+    credentials = get_store().get()
+
+    if not credentials:
+        return None
+    elif credentials.access_token_expired:
+        http = credentials.refresh(httplib2.Http())
+        http = get_store().get().authorize(http)
+    else:
+        http = credentials.authorize(httplib2.Http())
+
+    service = discovery.build('calendar', 'v3', http=http)
+
+    return service
+
+def create_events(rental_request):
+    service = build_service()
+
+    event = service.events().insert(...).execute()
